@@ -97,6 +97,7 @@ public:
     ntHashIterator& operator++()
     {
         next();
+        //cout<<*this.size();
         return *this;
     }
 

@@ -6,12 +6,14 @@
 #include <zlib.h>
 #include <stdio.h>
 #include "kseq.h"
+#include <fcntl.h>
 #include <time.h>
 #include "metrohash64.cpp"
 #include <stdint.h>
 #include <unordered_map>
 #include <iomanip>
 #include <cmath>
+#include <ctype.h>
 #include <stdlib.h>
 #include <cassert>
 #include <string.h>
@@ -37,20 +39,29 @@
 #include <stdint.h>
 #include <assert.h>
 #include <cstring>
-#include <iostream>
 #include <random>
 #include <cinttypes>
 //#include "dna_test.h"
+//#ifdef _OPENMP
+#include <omp.h>
+//#endif
+
+#include <thread>
 #include "ntHashIterator.hpp"
 
 #define SPP_MIX_HASH 1
+
 #include "sparsepp/spp.h"
+#include <fstream>
+
+KSEQ_INIT(int, read)
 
 using spp::sparse_hash_map;
 
 using namespace std;
 //KSEQ_INIT(gzFile, gzread)
-KSEQ_INIT(int, read)
+
+//KSEQ_INIT(int)
 std::map<char, char> mapp = {{'A', 'T'}, {'C', 'G'}, {'G', 'C'}, {'T', 'A'}, {'N', 'N'}};
 
 // Function to reverse string and return reverse string pointer of that
@@ -233,6 +244,7 @@ int main(int argc, char** argv)
       exit(1);
     }
     seq = kseq_init(fileno(fp));
+    //int orgk = k;
     int k = s;
     // int k = atoi(argv[3]); // size of maxheap i.e. sample size
     //unordered_map<uint64_t, pair<uint8_t, uint32_t>> MAP; // (<hash>, <tz, count>>) 
@@ -248,23 +260,51 @@ int main(int argc, char** argv)
     uint64_t total = 0, no_kmers = 0;
     int count = 0;
     uint64_t hash=0, fhVal=0, rhVal=0;
+
+    //parallel pragma
+    int id;
+    /*
+    #ifdef _OPENMP
+      omp_set_num_threads(2);
+    #endif */
+    int numthreads = 4;    
+    //for(l = kseq_read(seq) ; l >= 0 ; ) {
     while ((l = kseq_read(seq)) >= 0) {
         ++total;
         //cout << "\r" << total << " processing ..." << flush;
         int len = strlen(seq->seq.s);
         ntHashIterator itr(seq->seq.s, 1, n);
-        while (itr != itr.end()) {
+        cout<<"l value:"<<l<<endl;
+        cout<<"length:"<<len<<endl;
+        //#pragma omp parallel private(id)
+        //#pragma omp parallel default(none) num_threads(numthreads) private(id) shared(itr, hash, th, MAP, count, no_kmers, k)
+        //#pragma omp parallel private(id)
+        //#pragma omp for schedule(dynamic) nowait private(id)
+        #pragma omp parallel for default(none) num_threads(numthreads) private(id) shared(len, n, itr, hash, th, MAP, count, no_kmers, k)
+        for(int i = 0 ; i < len-n+1 ; i++) 
+        {
+        //while (itr != itr.end()) {
+            //int tid = omp_get_thread_num();
+            //cout<<"Id:"<<tid<<endl;
+            int tid = omp_get_thread_num();
+            printf("Id:%d\n",tid);
+            printf("Iterator 0 value: %ld\n",(*itr)[0]);
+            printf("Iterator 1 value: %ld\n",(*itr)[1]);
+            //printf("Iterator 2 value: %ld\n",(*itr)[2]);
             hash = (*itr)[0];
             ++no_kmers;
             uint8_t tz = trailing_zeros(hash);
             if(tz >= th){
-                //uint32_t hash = 0; 
-                //MurmurHash3_x86_32((uint8_t *)&hash1, 8, 0, &hash); 
-                //if(MAP.find(hash) != MAP.end()) MAP[hash].second += 1;  // increment the counter if already there 
+                
+                //PUT LOCK HERE
+                //#pragma omp atomic 
+              //{
                 if(MAP[tz].find(hash) != MAP[tz].end()) MAP[tz][hash] += 1; 
                 //if(MAP.find(hash) != MAP.end()) MAP[hash].second += 1;
                 else{ //// insert if not there 
                   //MAP.insert(make_pair(hash, make_pair(tz, 1))); 
+
+                  //PUT A LOCK
                   MAP[tz].insert(make_pair(hash, 1)); 
                   ++count;  // insert if not there 
                   //cout << "\r" << "count: " << count << flush;// << endl;
@@ -274,29 +314,13 @@ int main(int argc, char** argv)
                     SMap().swap(MAP[th]);
                     //MAP[th].clear(); //MAP[th].resize(0);
                     ++th;
-                    cout  << "count: " << count << endl; 
-                   /* int cnt = MAP[th].size();
-                    MAP[th].clear();
-                    count = count - cnt; 
-                    ++th;*/
-                   /*for (auto it = MAP.begin(); it != MAP.end(); ++it){
-                      if (it->second.first == th) { MAP.erase(it); } //it = MAP.erase(it);
-                      //else ++it;
-                    }
-                    count = MAP.size();
-                    ++th;*/
-                    //cout << "th: " << th << endl;
-                    /*decltype(MAP) newmap;
-                    for (auto&& p : MAP)
-                        if(p.second.first > th)
-                            newmap.emplace(move(p));
-                    MAP.swap(newmap);*/
-                    //count = MAP.size();
-                    //++th;
+                    //cout  << "count: " << count << endl; 
                   }
-                }
-            }
-	    ++itr;
+                } 
+                //} 
+            } 
+      //#pragma omp critical
+	    ++itr; 
 	}
     }
     //exit(0); 
@@ -338,3 +362,4 @@ int main(int argc, char** argv)
     return 0;
         
 }
+

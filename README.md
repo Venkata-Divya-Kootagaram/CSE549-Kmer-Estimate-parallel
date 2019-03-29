@@ -8,7 +8,3 @@ Compile:
 Run:
 
 		./KmerEst -f <seq.fa> -k  <kmerLen> -s <minHeap_Size> -c <coverage> -t <number of threads> -o <out.txt>
-  
- 
-  
-  
